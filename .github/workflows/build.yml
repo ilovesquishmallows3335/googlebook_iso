@@ -49,10 +49,14 @@ jobs:
 
       - name: Build image
         run: |
+          # build.sh asks "Continue? [y/N]" before downloading; CI has no TTY,
+          # so stdin hits EOF, the answer defaults to N and the script exits 1.
+          # Feed it "y" answers (process substitution avoids a SIGPIPE/pipefail
+          # failure from `yes`).
           if [ "${{ inputs.variant }}" = "looper" ]; then
-            ./build.sh --looper --data-size "${{ inputs.data_size }}"
+            ./build.sh --looper --data-size "${{ inputs.data_size }}" < <(yes)
           else
-            ./build.sh --standard
+            ./build.sh --standard < <(yes)
           fi
           ls -lh dist/
 

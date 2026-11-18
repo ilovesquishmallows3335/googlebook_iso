@@ -1,0 +1,76 @@
+name: build-gbos86
+
+on:
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Image type: standard (live/installer) or looper (persistent)"
+        type: choice
+        options: [standard, looper]
+        default: standard
+      data_size:
+        description: "Looper userdata size in GB (6 = 16GB stick, 20 = 32GB, 64 = 64GB+)"
+        default: "20"
+      repo:
+        description: "Source repo"
+        default: "linuxkid473/gbos-x86"
+      ref:
+        description: "Branch / tag / commit"
+        default: "main"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: false
+          swap-storage: true
+
+      - name: Checkout gbos-x86
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.ref }}
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd python3 curl
+          docker --version
+          df -h /
+
+      - name: Build image
+        run: |
+          if [ "${{ inputs.variant }}" = "looper" ]; then
+            ./build.sh --looper --data-size "${{ inputs.data_size }}"
+          else
+            ./build.sh --standard
+          fi
+          ls -lh dist/
+
+      - name: Compress and split
+        run: |
+          cd dist
+          for f in *.img; do zstd -T0 -3 --rm "$f"; done
+          split -b 1900M -d -a 2 *.zst gbOS86.img.zst.part-
+          rm -f *.img.zst
+          sha256sum gbOS86.img.zst.part-* > SHA256SUMS
+          ls -lh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gbos86-${{ inputs.variant }}
+          path: |
+            dist/gbOS86.img.zst.part-*
+            dist/SHA256SUMS
+          retention-days: 3
+          compression-level: 0
